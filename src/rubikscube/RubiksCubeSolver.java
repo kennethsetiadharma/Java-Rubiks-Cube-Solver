@@ -224,18 +224,11 @@ public class RubiksCubeSolver {
             }
             
             nodesExplored++;
-            if (nodesExplored % 100000 == 0) {
-                // Silent progress tracking
-            }
             
             // Try all moves
             for (char move : ALL_MOVES) {
-                // Prune opposite moves
-                if (node.path.length() > 0) {
-                    char lastMove = node.path.charAt(node.path.length() - 1);
-                    if (areOppositeMoves(move, lastMove)) {
-                        continue;
-                    }
+                if (shouldPruneMove(move, node.path)) {
+                    continue;
                 }
                 
                 tempCube.applyMoves(String.valueOf(move));
@@ -295,7 +288,7 @@ public class RubiksCubeSolver {
                 RubiksCube tempCube = stringToCube(node.state);
                 
                 for (char move : ALL_MOVES) {
-                    if (node.path.length() > 0 && areOppositeMoves(move, node.path.charAt(node.path.length() - 1))) {
+                    if (shouldPruneMove(move, node.path)) {
                         continue;
                     }
                     
@@ -338,7 +331,7 @@ public class RubiksCubeSolver {
                 RubiksCube tempCube = stringToCube(node.state);
                 
                 for (char move : ALL_MOVES) {
-                    if (node.path.length() > 0 && areOppositeMoves(move, node.path.charAt(node.path.length() - 1))) {
+                    if (shouldPruneMove(move, node.path)) {
                         continue;
                     }
                     
@@ -407,38 +400,23 @@ public class RubiksCubeSolver {
     }
     
     /**
-     * Check if two moves are opposites (would cancel out)
-     */
-    private boolean areOppositeMoves(char move1, char move2) {
-        if (move1 == move2) return true;
-        if (move1 == 'U' && move2 == 'D') return true;
-        if (move1 == 'D' && move2 == 'U') return true;
-        if (move1 == 'F' && move2 == 'B') return true;
-        if (move1 == 'B' && move2 == 'F') return true;
-        if (move1 == 'L' && move2 == 'R') return true;
-        if (move1 == 'R' && move2 == 'L') return true;
-        return false;
-    }
-    
-    /**
      * Advanced move pruning - avoid redundant sequences
+     * MINIMAL PRUNING - only prune moves that are clearly redundant
      */
     private boolean shouldPruneMove(char move, String path) {
         if (path.length() == 0) return false;
         
         char lastMove = path.charAt(path.length() - 1);
         
-        // Don't repeat same move
-        if (move == lastMove) return true;
-        
-        // Don't do opposite moves
-        if (areOppositeMoves(move, lastMove)) return true;
-        
-        // Don't do move patterns that are redundant
-        if (path.length() >= 2) {
-            char secondLast = path.charAt(path.length() - 2);
-            // Avoid patterns like URU, DLD, etc. where same axis moves alternate
-            if (move == secondLast && areOppositeMoves(move, lastMove)) {
+        // Only prune if same move appears 4+ times in a row
+        // (since UUUU = identity, doing it 4 times does nothing)
+        if (move == lastMove) {
+            int count = 1;
+            for (int i = path.length() - 1; i >= 0 && path.charAt(i) == move; i--) {
+                count++;
+            }
+            // Allow up to 3 repetitions, prune the 4th
+            if (count >= 3) {
                 return true;
             }
         }
