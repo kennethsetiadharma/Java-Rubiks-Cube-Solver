@@ -23,27 +23,34 @@ public class RubiksCubeSolver {
             return "";
         }
         
-        System.out.println("Starting bidirectional BFS (10s timeout)...");
+        System.out.println("Solving...");
         
         // Try bidirectional search
         String result = bidirectionalSearch(cube);
         
         if (result != null) {
-            System.out.println("Solution found with bidirectional search!");
             return result;
         }
         
         if (timedOut) {
-            System.out.println("Timed out after 10 seconds");
             return null;
         }
         
-        // If bidirectional fails, use simple BFS up to depth 15
-        System.out.println("Trying simple BFS...");
-        result = simpleBFS(cube, 15);
+        // If bidirectional fails, try IDA* (better than simple BFS for deep scrambles)
+        result = idaStar(cube);
         
         if (timedOut) {
-            System.out.println("Timed out after 10 seconds");
+            return null;
+        }
+        
+        if (result != null) {
+            return result;
+        }
+        
+        // Last resort: simple BFS with lower depth
+        result = simpleBFS(cube, 12);
+        
+        if (timedOut) {
             return null;
         }
         
@@ -56,6 +63,136 @@ public class RubiksCubeSolver {
             return true;
         }
         return false;
+    }
+    
+    /**
+     * IDA* search - memory efficient for deep searches
+     */
+    private String idaStar(RubiksCube cube) {
+        int threshold = getHeuristic(cube);
+        
+        while (threshold <= 20) {
+            if (checkTimeout()) {
+                return null;
+            }
+            
+            String result = idaSearch(cube, 0, threshold, ' ', "");
+            
+            if (result != null) {
+                return result;
+            }
+            
+            threshold++;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Recursive IDA* search
+     */
+    private String idaSearch(RubiksCube cube, int g, int threshold, char lastMove, String path) {
+        if (checkTimeout()) {
+            return null;
+        }
+        
+        if (cube.isSolved()) {
+            return path;
+        }
+        
+        int h = getHeuristic(cube);
+        int f = g + h;
+        
+        if (f > threshold) {
+            return null;
+        }
+        
+        nodesExplored++;
+        
+        String originalState = cube.toString();
+        
+        for (char move : ALL_MOVES) {
+            if (shouldPruneMove(move, path)) {
+                continue;
+            }
+            
+            cube.applyMoves(String.valueOf(move));
+            String result = idaSearch(cube, g + 1, threshold, move, path + move);
+            
+            if (result != null) {
+                return result;
+            }
+            
+            // Restore
+            restoreCube(cube, originalState);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Heuristic function - estimates moves to solve
+     * Improved version that considers corners and edges separately
+     */
+    private int getHeuristic(RubiksCube cube) {
+        String state = cube.toString();
+        String[] lines = state.split("\n");
+        
+        int wrongCorners = 0;
+        int wrongEdges = 0;
+        
+        // Check corners (8 corners, 3 stickers each)
+        // Top corners
+        if (lines[0].charAt(3) != 'O') wrongCorners++;
+        if (lines[0].charAt(5) != 'O') wrongCorners++;
+        if (lines[2].charAt(3) != 'O') wrongCorners++;
+        if (lines[2].charAt(5) != 'O') wrongCorners++;
+        
+        // Bottom corners
+        if (lines[6].charAt(3) != 'R') wrongCorners++;
+        if (lines[6].charAt(5) != 'R') wrongCorners++;
+        if (lines[8].charAt(3) != 'R') wrongCorners++;
+        if (lines[8].charAt(5) != 'R') wrongCorners++;
+        
+        // Check edges (12 edges, 2 stickers each)
+        // Top edges
+        if (lines[0].charAt(4) != 'O') wrongEdges++;
+        if (lines[1].charAt(3) != 'O') wrongEdges++;
+        if (lines[1].charAt(5) != 'O') wrongEdges++;
+        if (lines[2].charAt(4) != 'O') wrongEdges++;
+        
+        // Middle edges
+        if (lines[3].charAt(1) != 'G') wrongEdges++;
+        if (lines[3].charAt(4) != 'W') wrongEdges++;
+        if (lines[3].charAt(7) != 'B') wrongEdges++;
+        if (lines[3].charAt(10) != 'Y') wrongEdges++;
+        
+        // Bottom edges
+        if (lines[6].charAt(4) != 'R') wrongEdges++;
+        if (lines[7].charAt(3) != 'R') wrongEdges++;
+        if (lines[7].charAt(5) != 'R') wrongEdges++;
+        if (lines[8].charAt(4) != 'R') wrongEdges++;
+        
+        // Corners need at least wrongCorners/4 moves (4 corners per move)
+        // Edges need at least wrongEdges/4 moves (4 edges per move)
+        int cornerEstimate = (wrongCorners + 3) / 4;
+        int edgeEstimate = (wrongEdges + 3) / 4;
+        
+        return Math.max(cornerEstimate, edgeEstimate);
+    }
+    
+    /**
+     * Restore cube state
+     */
+    private void restoreCube(RubiksCube cube, String state) {
+        try {
+            String[] lines = state.split("\n");
+            java.lang.reflect.Field field = RubiksCube.class.getDeclaredField("cube");
+            field.setAccessible(true);
+            field.set(cube, lines);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to restore cube", e);
+        }
     }
     
     /**
@@ -83,13 +220,12 @@ public class RubiksCubeSolver {
             RubiksCube tempCube = stringToCube(node.state);
             
             if (tempCube.isSolved()) {
-                System.out.println("Found at depth: " + node.path.length());
                 return node.path;
             }
             
             nodesExplored++;
-            if (nodesExplored % 10000 == 0) {
-                System.out.println("Explored: " + nodesExplored + " nodes, depth: " + node.path.length());
+            if (nodesExplored % 100000 == 0) {
+                // Silent progress tracking
             }
             
             // Try all moves
@@ -139,15 +275,12 @@ public class RubiksCubeSolver {
         backwardMap.put(solvedState, "");
         backwardQueue.offer(new SearchNode(solvedState, ""));
         
-        int maxDepthPerSide = 8; // Search 8 moves from each side
+        int maxDepthPerSide = 10; // Search 10 moves from each side (20 total)
         
         for (int depth = 0; depth < maxDepthPerSide; depth++) {
             if (checkTimeout()) {
                 return null;
             }
-            
-            System.out.println("Depth " + depth + " - Forward: " + forwardMap.size() + 
-                             ", Backward: " + backwardMap.size());
             
             // Expand forward one level
             int forwardSize = forwardQueue.size();
@@ -181,7 +314,6 @@ public class RubiksCubeSolver {
                             
                             // VERIFY the solution before returning
                             if (verifySolution(cube, solution)) {
-                                System.out.println("Meet in middle! Total moves: " + solution.length());
                                 return solution;
                             }
                         }
@@ -225,7 +357,6 @@ public class RubiksCubeSolver {
                             
                             // VERIFY the solution before returning
                             if (verifySolution(cube, solution)) {
-                                System.out.println("Meet in middle! Total moves: " + solution.length());
                                 return solution;
                             }
                         }
@@ -238,8 +369,7 @@ public class RubiksCubeSolver {
             }
             
             // Early termination if search spaces get too large
-            if (forwardMap.size() > 100000 || backwardMap.size() > 100000) {
-                System.out.println("Search space too large, switching to simple BFS");
+            if (forwardMap.size() > 300000 || backwardMap.size() > 300000) {
                 return null;
             }
         }
@@ -287,6 +417,32 @@ public class RubiksCubeSolver {
         if (move1 == 'B' && move2 == 'F') return true;
         if (move1 == 'L' && move2 == 'R') return true;
         if (move1 == 'R' && move2 == 'L') return true;
+        return false;
+    }
+    
+    /**
+     * Advanced move pruning - avoid redundant sequences
+     */
+    private boolean shouldPruneMove(char move, String path) {
+        if (path.length() == 0) return false;
+        
+        char lastMove = path.charAt(path.length() - 1);
+        
+        // Don't repeat same move
+        if (move == lastMove) return true;
+        
+        // Don't do opposite moves
+        if (areOppositeMoves(move, lastMove)) return true;
+        
+        // Don't do move patterns that are redundant
+        if (path.length() >= 2) {
+            char secondLast = path.charAt(path.length() - 2);
+            // Avoid patterns like URU, DLD, etc. where same axis moves alternate
+            if (move == secondLast && areOppositeMoves(move, lastMove)) {
+                return true;
+            }
+        }
+        
         return false;
     }
     
