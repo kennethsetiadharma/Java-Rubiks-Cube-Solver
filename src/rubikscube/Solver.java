@@ -1,18 +1,48 @@
 package rubikscube;
 
+import java.io.*;
 import java.util.*;
 
 /**
  * Bidirectional BFS Rubik's Cube Solver
  * Fast non-optimal solver for deeply scrambled cubes
  */
-public class RubiksCubeSolver {
+public class Solver {
     
     private static final char[] ALL_MOVES = {'U', 'D', 'F', 'B', 'L', 'R'};
     private static final long TIMEOUT_MS = 10000; // 10 second timeout
     private int nodesExplored;
     private long startTime;
     private boolean timedOut;
+    
+    public static void main(String[] args) {
+        if (args.length != 2) {
+            System.exit(1);
+        }
+        
+        String inputFile = args[0];
+        String outputFile = args[1];
+        
+        try {
+            RubiksCube cube = new RubiksCube(inputFile);
+            Solver solver = new Solver();
+            String solution = solver.solve(cube);
+            
+            try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile))) {
+                if (solution != null) {
+                    writer.println(solution);
+                } else {
+                    writer.println("No solution found - timed out");
+                }
+            }
+        } catch (Exception e) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile))) {
+                writer.println("Error: Could not solve cube");
+            } catch (IOException ex) {
+                System.exit(1);
+            }
+        }
+    }
     
     public String solve(RubiksCube cube) {
         nodesExplored = 0;
@@ -22,8 +52,6 @@ public class RubiksCubeSolver {
         if (cube.isSolved()) {
             return "";
         }
-        
-        System.out.println("Solving...");
         
         // Try bidirectional search
         String result = bidirectionalSearch(cube);
